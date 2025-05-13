@@ -158,7 +158,7 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, near, far, 
        
         for j in range(startime, startime+ int(duration)):
             image_path = os.path.join(os.path.dirname(os.path.dirname(images_folder)), os.path.basename(extr.name).split(".")[0], f"{j}.png")
-            image_name = os.path.basename(image_path).split(".")[0]
+            image_name = extr.name.split(".")[0] + "_" + os.path.basename(image_path).split(".")[0]
             assert os.path.exists(image_path), "Image {} does not exist!".format(image_path)
             image = Image.open(image_path)
             if j == startime:
