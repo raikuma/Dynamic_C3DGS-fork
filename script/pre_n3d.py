@@ -76,7 +76,7 @@ def preparecolmapdynerf(folder, offset=0):
         os.mkdir(savedir)
     for folder in folderlist :
         imagepath = os.path.join(folder, str(offset) + ".png")
-        imagesavepath = os.path.join(savedir, folder.split("/")[-2] + ".png")
+        imagesavepath = os.path.join(savedir, folder.replace("\\", "/").split("/")[-2] + ".png")
 
         shutil.copy(imagepath, imagesavepath)
 
@@ -172,7 +172,7 @@ if __name__ == "__main__" :
  
     parser.add_argument("--videopath", default="", type=str)
     parser.add_argument("--startframe", default=0, type=int)
-    parser.add_argument("--endframe", default=50, type=int)
+    parser.add_argument("--endframe", default=300, type=int)
 
     args = parser.parse_args()
     videopath = args.videopath
@@ -197,23 +197,23 @@ if __name__ == "__main__" :
     
     
     ##### step1
-    print("start extracting 300 frames from videos")
-    videoslist = glob.glob(videopath + "*.mp4")
-    for v in tqdm.tqdm(videoslist):
-        extractframes(v)
+    # print("start extracting 300 frames from videos")
+    # videoslist = glob.glob(videopath + "*.mp4")
+    # for v in tqdm.tqdm(videoslist):
+    #     extractframes(v)
 
     
 
     # # ## step2 prepare colmap input 
-    print("start preparing colmap image input")
-    for offset in range(startframe, endframe):
-        preparecolmapdynerf(videopath, offset)
+    # print("start preparing colmap image input")
+    # for offset in range(startframe, endframe):
+    #     preparecolmapdynerf(videopath, offset)
 
 
-    print("start preparing colmap database input")
     # # ## step 3 prepare colmap db file 
-    for offset in range(startframe, endframe):
-        convertdynerftocolmapdb(videopath, offset)
+    # print("start preparing colmap database input")
+    # for offset in range(startframe, endframe):
+    #     convertdynerftocolmapdb(videopath, offset)
 
 
     # ## step 4 run colmap, per frame, if error, reinstall opencv-headless 

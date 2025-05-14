@@ -28,7 +28,8 @@ import numpy as np
 import shutil
 import pickle
 import natsort 
-
+import sys
+sys.path.append(".")
 import struct
 import pickle
 from scipy.spatial.transform import Rotation
@@ -52,8 +53,8 @@ immmersivescaledict["11_Alexa"] = 1.0
 immmersivescaledict["12_Cave"] = 1.0
 
 for scene in Immersiveseven:
-    SCALEDICT[scene + "_dist"] = 1.0  # 
-    immmersivescaledict[scene + "_dist"] = 1.0
+    SCALEDICT[scene + "_undist"] = 1.0  # 
+    immmersivescaledict[scene + "_undist"] = 1.0
 
 
 
@@ -93,7 +94,6 @@ def extractframesx1(videopath):
             sucess = False
             cam.release()
             return
-    
     cam.release()
     return
 
@@ -283,12 +283,13 @@ def softlinkdataset(originalpath, path, srcscene, scene):
         os.makedirs(path)
 
     for videofolder in videofolderlist:
-        newlink = os.path.join(path, videofolder.split("/")[-2])
+        newlink = os.path.join(path, videofolder.replace("\\", "/").split("/")[-2])
         if os.path.exists(newlink):
             print("already exists do not make softlink again")
             quit()
         assert not os.path.exists(newlink)
-        cmd = " ln -s " + videofolder + " " + newlink
+        # cmd = " ln -s " + videofolder + " " + newlink
+        cmd = "cp -r " + videofolder + " " + newlink
         os.system(cmd)
         print(cmd)
 
@@ -300,7 +301,7 @@ if __name__ == "__main__" :
  
     parser.add_argument("--videopath", default="", type=str)
     parser.add_argument("--startframe", default=0, type=int)
-    parser.add_argument("--endframe", default=50, type=int)
+    parser.add_argument("--endframe", default=300, type=int)
 
 
     args = parser.parse_args()
@@ -349,7 +350,7 @@ if __name__ == "__main__" :
         extractframesx1(v)
 
 
-    softlinkdataset(originalpath, path, srcscene, scene)
+    # softlinkdataset(originalpath, path, srcscene, scene)
 
     try:
         imageundistort(video, offsetlist=[i for i in range(startframe,endframe)],focalscale=scale, fixfocal=None)
