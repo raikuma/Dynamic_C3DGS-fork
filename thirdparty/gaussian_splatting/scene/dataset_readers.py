@@ -242,6 +242,7 @@ def readColmapCamerasTechnicolor(cam_extrinsics, cam_intrinsics, images_folder, 
 
             
             image = Image.open(image_path)
+            # image = torch.empty(0)
 
 
             if j == startime:
@@ -558,9 +559,15 @@ def fetchPly(path):
     plydata = PlyData.read(path)
     vertices = plydata['vertex']
     positions = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T
-    times = np.vstack([vertices['t']]).T
+    try:
+        times = np.vstack([vertices['t']]).T
+    except:
+        times = np.zeros((positions.shape[0], 1), dtype=np.float32)  # Default to zero if 't' is not present
     colors = np.vstack([vertices['red'], vertices['green'], vertices['blue']]).T / 255.0
-    normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
+    try:
+        normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
+    except:
+        normals = np.zeros_like(positions)  # Default to zero if normals are not present
     return BasicPointCloud(points=positions, colors=colors, normals=normals, times=times)
 
 def storePly(path, xyzt, rgb):
@@ -877,21 +884,29 @@ def readColmapSceneInfoTechnicolor(path, images, eval, llffhold=8, multiview=Fal
     # for cam_info in cam_infos:
     #     print(cam_info.uid, cam_info.R, cam_info.T, cam_info.FovY, cam_info.image_name)
 
+
     if eval:
-        train_cam_infos = [_ for _ in cam_infos if "cam10" not in _.image_name]
-        test_cam_infos = [_ for _ in cam_infos if "cam10" in _.image_name]
-        uniquecheck = []
-        for cam_info in test_cam_infos:
-            if cam_info.image_name not in uniquecheck:
-                uniquecheck.append(cam_info.image_name)
-        assert len(uniquecheck) == 1 
-        
-        sanitycheck = []
-        for cam_info in train_cam_infos:
-            if cam_info.image_name not in sanitycheck:
-                sanitycheck.append(cam_info.image_name)
-        for testname in uniquecheck:
-            assert testname not in sanitycheck
+            train_cam_infos = [_ for _ in cam_infos if "cam10" not in _.image_name]
+            test_cam_infos = [_ for _ in cam_infos if "cam10" in _.image_name]
+            if len(test_cam_infos) > 0:
+                uniquecheck = []
+                for cam_info in test_cam_infos:
+                    if cam_info.image_name not in uniquecheck:
+                        uniquecheck.append(cam_info.image_name)
+                assert len(uniquecheck) == 1 
+                
+                sanitycheck = []
+                for cam_info in train_cam_infos:
+                    if cam_info.image_name not in sanitycheck:
+                        sanitycheck.append(cam_info.image_name)
+                for testname in uniquecheck:
+                    assert testname not in sanitycheck
+            else:
+                first_cam = cam_infos[0].image_name
+                print("do custom loader training, select first cam as test frame: ", first_cam)
+                cam_infos = natsort.natsorted(cam_infos_unsorted.copy(), key = lambda x : x.image_name)
+                train_cam_infos = [_ for _ in cam_infos if first_cam not in _.image_name]
+                test_cam_infos = [_ for _ in cam_infos if first_cam in _.image_name]
     else:
         train_cam_infos = cam_infos
         test_cam_infos = cam_infos[:4]
@@ -931,6 +946,124 @@ def readColmapSceneInfoTechnicolor(path, images, eval, llffhold=8, multiview=Fal
                            test_cameras=test_cam_infos,
                            nerf_normalization=nerf_normalization,
                            ply_path=totalply_path)
+    return scene_info
+
+def readColmapCamerasTechnicolorSingle(args, cam_extrinsics, cam_intrinsics, images_folder, near, far, startime=0, duration=None):
+    cam_infos = []
+    for idx, key in enumerate(cam_extrinsics): 
+        sys.stdout.write('\r')
+        sys.stdout.write("Reading camera {}/{}".format(idx+1, len(cam_extrinsics)))
+        sys.stdout.flush()
+
+        extr = cam_extrinsics[key]
+        intr = cam_intrinsics[extr.camera_id]
+        height = intr.height
+        width = intr.width
+
+        uid = intr.id
+        R = np.transpose(qvec2rotmat(extr.qvec))
+        T = np.array(extr.tvec)
+
+        if intr.model=="SIMPLE_PINHOLE":
+            focal_length_x = intr.params[0]
+            focal_length_y = focal_length_x
+            FovY = focal2fov(focal_length_x, height)
+            FovX = focal2fov(focal_length_x, width)
+        elif intr.model=="PINHOLE":
+            focal_length_x = intr.params[0]
+            focal_length_y = intr.params[1]
+            FovY = focal2fov(focal_length_y, height)
+            FovX = focal2fov(focal_length_x, width)
+        else:
+            assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
+        for j in range(startime, startime+ int(duration)):
+            if 'SelfCap' in args.source_path:
+                idx = int(extr.name[:-4].split('_')[-1]) + j
+                image_path = os.path.join(images_folder,f"images/{extr.name[:-4].split('_')[0]}_{idx:05d}.png")
+                image_name = image_path.split('/')[-1]
+            else:
+                image_path = os.path.join(images_folder,f"images/{extr.name[:-4]}", "%04d.png" % j)
+                image_name = os.path.join(f"{extr.name[:-4]}", image_path.split('/')[-1]).split('/')[0]
+
+            cxr =   ((intr.params[2] )/  width - 0.5) 
+            cyr =   ((intr.params[3] ) / height - 0.5) 
+
+            # cx = intr.params[2]
+            # cy = intr.params[3]
+    
+            assert os.path.exists(image_path), "Image {} does not exist!".format(image_path)
+            # if not args.dataloader:
+            image = Image.open(image_path)
+            # else:
+            # image = np.empty(0)
+
+            if j == startime:
+                cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image, image_path=image_path, image_name=image_name, width=width, height=height, near=near, far=far, timestamp=(j-startime)/duration, pose=1, hpdirecitons=1, cxr=cxr, cyr=cyr)
+            else:
+                cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image, image_path=image_path, image_name=image_name, width=width, height=height, near=near, far=far, timestamp=(j-startime)/duration, pose=None, hpdirecitons=None,  cxr=cxr, cyr=cyr)
+            cam_infos.append(cam_info)
+    sys.stdout.write('\n')
+    return cam_infos
+
+def readColmapSceneInfoTechnicolorSingle(args, path, images, eval, llffhold=8, multiview=False, duration=50):
+    try:
+        cameras_extrinsic_file = os.path.join(path, "colmap/dense/workspace/sparse", "images.bin")
+        cameras_intrinsic_file = os.path.join(path, "colmap/dense/workspace/sparse", "cameras.bin")
+        cam_extrinsics = read_extrinsics_binary(cameras_extrinsic_file)
+        cam_intrinsics = read_intrinsics_binary(cameras_intrinsic_file)
+    except:
+        cameras_extrinsic_file = os.path.join(path, "colmap/dense/workspace/sparse", "images.txt")
+        cameras_intrinsic_file = os.path.join(path, "colmap/dense/workspace/sparse", "cameras.txt")
+        cam_extrinsics = read_extrinsics_text(cameras_extrinsic_file)
+        cam_intrinsics = read_intrinsics_text(cameras_intrinsic_file)
+
+    near = 0.01
+    far = 100
+
+    cam_infos_unsorted = readColmapCamerasTechnicolorSingle(args, cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics, images_folder=path, near=near, far=far, duration=duration)
+    cam_infos = sorted(cam_infos_unsorted.copy(), key = lambda x : x.image_name)
+    
+    if 'bike1' in path or 'bike2' in path:
+        test_cam = "cam09"
+    elif 'dance1' in path or 'dance2' in path:
+        test_cam = "cam15"
+    elif 'corgi1' in path or 'corgi2' in path:
+        test_cam = "cam07"
+    else: # technicolor
+        test_cam = "cam10"
+
+    train_cam_infos = [_ for _ in cam_infos if test_cam not in _.image_name]
+    test_cam_infos = [_ for _ in cam_infos if test_cam in _.image_name]
+
+    uniquecheck = []
+    for cam_info in test_cam_infos:
+        if cam_info.image_name[:5] not in uniquecheck:
+            uniquecheck.append(cam_info.image_name[:5])
+    assert len(uniquecheck) == 1 
+    
+    sanitycheck = []
+    for cam_info in train_cam_infos:
+        if  cam_info.image_name[:5] not in sanitycheck:
+            sanitycheck.append( cam_info.image_name[:5])
+    for testname in uniquecheck:
+        assert testname not in sanitycheck
+
+    nerf_normalization = getNerfppNorm(train_cam_infos)
+
+    if hasattr(args, 'ply_path') and args.ply_path:
+        ply_path = args.ply_path
+    else:
+        ply_path = os.path.join(path, "points3D_downsample.ply")
+    try:
+        pcd = fetchPly(ply_path)
+    except:
+        pcd = None
+
+    scene_info = SceneInfo(point_cloud=pcd,
+                           train_cameras=train_cam_infos,
+                           test_cameras=test_cam_infos,
+                           nerf_normalization=nerf_normalization,
+                           ply_path=ply_path)
     return scene_info
 
 def readCamerasFromTransforms(path, transformsfile, white_background, extension=".png"):
@@ -1196,6 +1329,7 @@ sceneLoadTypeCallbacks = {
     "Colmapmv": readColmapSceneInfoMv,
     "Blender" : readNerfSyntheticInfo, 
     "Technicolor": readColmapSceneInfoTechnicolor,
+    "TechnicolorSingle": readColmapSceneInfoTechnicolorSingle,
 }
 
 
