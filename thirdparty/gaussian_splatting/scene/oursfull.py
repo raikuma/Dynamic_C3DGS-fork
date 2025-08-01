@@ -21,7 +21,7 @@ from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation, update_quaternion
 # from helper_model import getcolormodel, interpolate_point, interpolate_partuse, interpolate_pointv3, mortonEncode
-from helper_model import mortonEncode
+from helper_model import getcolormodel, mortonEncode
 
 from vector_quantize_pytorch import VectorQuantize, ResidualVQ
 import tinycudann as tcnn
